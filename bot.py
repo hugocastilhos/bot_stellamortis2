@@ -39,7 +39,7 @@ init_db()
 
 @tasks.loop(minutes=10)
 async def monitorar_condicoes_mapa():
-    canal_id = 1433136439456956576  # ID do canal de eventos
+    canal_id = 1433136439456956576  # ID do seu canal
     canal = bot.get_channel(canal_id)
     if not canal:
         return
@@ -50,51 +50,63 @@ async def monitorar_condicoes_mapa():
     }
 
     try:
-        # 1. PEGAR AS INFORMAÇÕES DO SITE
         response = requests.get(url, headers=headers, timeout=15)
-        if response.status_code != 200: return
+        if response.status_code != 200:
+            return
 
         soup = BeautifulSoup(response.text, 'html.parser')
         
         embed = discord.Embed(
             title="🌍 CONDIÇÕES DOS MAPAS - ARC RAIDERS",
             url=url,
-            description="Status atual das zonas de incursão.",
+            description="Relatório de inteligência sobre anomalias e eventos.",
             color=0xf1c40f,
             timestamp=datetime.datetime.now()
         )
 
-        # (Lógica de captura simplificada para o exemplo)
-        secoes = soup.find_all(["section", "div"], class_=lambda x: x and 'condition' in x.lower())
-        if not secoes:
-            embed.add_field(name="🛰️ Status", value="Dados em processamento. Confira o site oficial.")
-        else:
-            for secao in secoes[:6]:
-                titulo = secao.find(["h2", "h3"])
-                info = secao.find(["p", "span"])
-                nome = titulo.get_text(strip=True) if titulo else "Região"
-                detalhe = info.get_text(strip=True) if info else "Estável"
-                embed.add_field(name=f"📍 {nome}", value=f"📝 {detalhe}", inline=False)
+        # 1. BUSCAR EVENTOS ATIVOS (Active Now)
+        # O site costuma usar classes como 'active' ou 'current' para o que está rolando agora
+        ativos = soup.find_all(class_=lambda x: x and 'active' in x.lower())
+        if ativos:
+            lista_ativos = ""
+            for item in ativos[:3]: # Pega os 3 primeiros
+                txt = item.get_text(strip=True)
+                if txt: lista_ativos += f"🔴 **{txt}**\n"
+            
+            if lista_ativos:
+                embed.add_field(name="🔥 ATIVO AGORA", value=lista_ativos, inline=False)
 
-        embed.set_footer(text="Esta mensagem será auto-substituída em 10 minutos.")
+        # 2. BUSCAR PRÓXIMOS EVENTOS (Coming Up)
+        # O site costuma usar 'coming' ou 'next' para os futuros
+        proximos = soup.find_all(class_=lambda x: x and 'coming' in x.lower())
+        if proximos:
+            lista_proximos = ""
+            for item in proximos[:3]:
+                txt = item.get_text(strip=True)
+                if txt: lista_proximos += f"⏳ *{txt}*\n"
+            
+            if lista_proximos:
+                embed.add_field(name="📅 EM BREVE", value=lista_proximos, inline=False)
 
-        # --- 2. LÓGICA DE APAGAR A ANTERIOR ---
-        # Procuramos nas últimas 20 mensagens do canal
-        async for mensagem in canal.history(limit=20):
-            # Se a mensagem for do bot e tiver o título do nosso Embed de eventos
+        # Caso a raspagem por classe falhe (site dinâmico), mantém um aviso
+        if not embed.fields:
+            embed.description = "🛰️ **Sinal instável.** Verifique o status detalhado no [Site Oficial](https://arcraiders.com/pt-BR/map-conditions)."
+
+        embed.set_footer(text="Atualização automática | Fonte: arcraiders.com")
+
+        # 3. LIMPEZA E ENVIO
+        async for mensagem in canal.history(limit=15):
             if mensagem.author == bot.user and mensagem.embeds:
-                if mensagem.embeds[0].title == "🌍 CONDIÇÕES DOS MAPAS - ARC RAIDERS":
+                if "CONDIÇÕES DOS MAPAS" in mensagem.embeds[0].title:
                     try:
                         await mensagem.delete()
                     except:
-                        pass # Caso a mensagem já tenha sido apagada ou erro de permissão
+                        pass
 
-        # --- 3. POSTAR A NOVA ---
         await canal.send(embed=embed)
-        print("✅ Eventos atualizados: Postagem antiga removida e nova enviada.")
 
     except Exception as e:
-        print(f"Erro na tarefa de monitoramento: {e}")
+        print(f"Erro ao monitorar site: {e}")
 
 class ARC_Bot(commands.Bot):
     def __init__(self):
