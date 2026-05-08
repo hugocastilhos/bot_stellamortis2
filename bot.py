@@ -38,11 +38,17 @@ class ARC_Bot(commands.Bot):
         intents = discord.Intents.all() # Necessário para gerenciar cargos e canais
         super().__init__(command_prefix="/", intents=intents)
 
-    async def setup_hook(self):
-        # Registra as Views persistentes (para botões não pararem de funcionar)
+async def setup_hook(self):
+        # Limpa o cache de comandos para evitar conflitos de nomes duplicados ou antigos
+        # self.tree.clear_commands(guild=None) # Opcional: use se o erro persistir
+
         self.add_view(RegrasView())
         self.add_view(SuporteView())
+        self.add_view(TicketActionView())
+
+        # Sincroniza novamente
         await self.tree.sync()
+        print("✅ Comandos de barra sincronizados com sucesso!")
 
 bot = ARC_Bot()
 
@@ -499,27 +505,13 @@ async def status(interaction: discord.Interaction):
     app_commands.Choice(name="TRIO (3 pessoas)", value="trio")
 ])
 async def raid_post(interaction: discord.Interaction, tipo: app_commands.Choice[str], mapa: str, objetivo: str):
-    # IDs de Categoria conforme solicitado
-    if tipo.value == "duo":
-        vagas = 2
-        cat_id = 1486347910885937242
-    else:
-        vagas = 3
-        cat_id = 1486348090741883114
+    # Cálculo de variáveis antes de enviar
+    vagas = 2 if tipo.value == "duo" else 3
+    cat = 1486347910885937242 if tipo.value == "duo" else 1486348090741883114
 
-    view = RaidView(
-        autor=interaction.user,
-        vagas_totais=vagas,
-        mapa=mapa,
-        objetivo=objetivo,
-        cat_id=cat_id,
-        limit=vagas
-    )
-    
-    await interaction.response.send_message(
-        embed=view.gerar_embed(),
-        view=view
-    )
+# Cria a View APENAS aqui, e não no setup_hook
+    view = RaidView(interaction.user, vagas, mapa, objetivo, cat)
+    await interaction.response.send_message(embed=view.gerar_embed(), view=view)
 
 # --- EVENTOS DE CANAIS E TÓPICOS ---
 
