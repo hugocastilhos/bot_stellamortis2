@@ -2,11 +2,12 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 import psycopg2
+import time
 import datetime
 import os
 import io
 from dotenv import load_dotenv
-
+from typing import Optional
 load_dotenv()
 TOKEN = os.getenv('TOKEN')
 
@@ -164,13 +165,12 @@ async def ajuda(interaction: discord.Interaction):
         color=0x3498db
     )
     embed.add_field(name="📦 SISTEMA DE TROCAS", value="🌟 `/rep membro` - Dá +1 de reputação positiva.\n💢 `/neg membro` - Dá -1 de reputação negativa.\n👤 `/perfil membro` - Consulta a ficha do raider.\n🏆 `/top` - Ranking dos mais confiáveis.", inline=False)
-    embed.add_field(name="📡 COMUNICAÇÃO DE RAID", value="🚨 `/raid` → selecione o mapa e número de vagas.\n• 1 vaga = DUO\n• 2 vagas = TRIO", inline=False)
     
     is_mod = any(role.name.lower() == "mods" for role in interaction.user.roles)
     is_admin = interaction.user.guild_permissions.administrator
 
     if is_mod or is_admin:
-        embed.add_field(name="🛠️ PROTOCOLOS DE COMANDO (STAFF)", value="📢 `/falar texto` - Anúncios oficiais.\n🧹 `/limpar quantidade` - Limpa mensagens.\n🚨 `/denunciar membro tipo motivo` - Blacklist.\n📜 `/setrep membro pontos` - Ajusta reputação.\n⚙️ `/status` - Status do bot.", inline=False)
+        embed.add_field(name="🛠️ PROTOCOLOS DE COMANDO (STAFF)", value="📢 `/falar texto` - Anúncios oficiais.\n🧹 `/limpar quantidade` - Limpa mensagens.\n📜 `/setrep membro pontos` - Ajusta reputação.\n⚙️ `/status` - Status do bot.", inline=False)
 
     if interaction.guild.icon:
         embed.set_thumbnail(url=interaction.guild.icon.url)
@@ -178,12 +178,44 @@ async def ajuda(interaction: discord.Interaction):
     embed.set_footer(text=f"Developer: {interaction.user.name} | Sponsors: !Gio, WARCELUS, lari nunes", icon_url=interaction.user.display_avatar.url)
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="postar_regras", description="Posta o sistema de regras")
+@bot.tree.command(name="postar_regras", description="Posta o sistema de regras oficial do servidor")
 async def postar_regras(interaction: discord.Interaction):
-    if not interaction.user.guild_permissions.administrator: return
-    embed = discord.Embed(title="📜 REGRAS DO SERVIDOR", description="Clique no botão abaixo para aceitar as regras e liberar o servidor.", color=0x3498db)
+    # Verificação de segurança para apenas administradores
+    if not interaction.user.guild_permissions.administrator:
+        return await interaction.response.send_message("Apenas administradores podem executar este protocolo.", ephemeral=True)
+
+    embed = discord.Embed(
+        title="🛰️ DIRETRIZES DA COMUNIDADE - ARC RAIDERS BRASIL",
+        description=(
+            "Bem-vindo à Resistência! Para garantir uma convivência tática e justa, siga as normas:\n\n"
+            "🤝 **1. RESPEITO ACIMA DE TUDO**\n"
+            "Sem toxicidade, racismo, homofobia ou qualquer tipo de preconceito. Somos uma comunidade.\n\n"
+            "🚫 **2. PROIBIDO RMT (Real Money Trade)**\n"
+            "Compra e venda de itens ou contas por dinheiro real é terminantemente proibida. Sujeito a banimento imediato.\n\n"
+            "🛡️ **3. TRAPAÇAS E HACKS**\n"
+            "O uso de softwares de terceiros (Aimbot, Wallhack, etc) resultará em blacklist global no servidor e denúncia para os devs. Inclui mencionar o uso ou compartilhar links desses conteúdos.\n\n"
+            "📦 **4. CANAIS DE TROCA**\n"
+            "Use o sistema de reputação (`/rep` e `/neg`) para manter a segurança da comunidade.\n\n"
+            "🏃 **5. CONDUTA EM RAID**\n"
+            "Seja um bom parceiro. Abandonar o squad propositalmente ou 'trollar' extrações gera má reputação.\n\n"
+            "📢 **6. SEM PUBLICIDADE**\n"
+            "Não é permitido publicar links, convites ou promoção em redes sociais sem autorização.\n\n"
+            "⚖️ **7. SEM DISCUSSÕES POLARIZADAS**\n"
+            "Evite tópicos como política ou religião com a intenção de causar conflito ou indignação.\n\n"
+            "--- \n"
+            "**Segurança ARC Raiders Brasil** • *O bom senso é a regra principal.*"
+        ),
+        color=0x3498db
+    )
+    
+    if interaction.guild.icon:
+        embed.set_thumbnail(url=interaction.guild.icon.url)
+
+    embed.set_footer(text="Ao clicar no botão abaixo, você declara estar ciente e de acordo.")
+
+    # Envia o embed com a View que já contém o botão para o cargo 'speranza'
     await interaction.channel.send(embed=embed, view=RegrasView())
-    await interaction.response.send_message("Mensagem de regras enviada.", ephemeral=True)
+    await interaction.response.send_message("✅ Protocolo de Regras postado com sucesso.", ephemeral=True)
 
 @bot.tree.command(name="postar_suporte", description="Posta o sistema de tickets")
 async def postar_suporte(interaction: discord.Interaction):
@@ -288,6 +320,106 @@ async def top(interaction: discord.Interaction):
     embed = discord.Embed(title="🏆 Top 10 Raiders Confiáveis", description=desc or "Ninguém no ranking ainda.", color=0xf1c40f)
     await interaction.response.send_message(embed=embed)
 
+@bot.tree.command(name="aviso", description="Envia um comunicado oficial com marcação @everyone")
+@app_commands.describe(
+    mensagem="O texto do aviso",
+    titulo="Título opcional para criar um Embed",
+    cor="Cor do Embed em Hex (ex: 00ff00 para verde). Deixe vazio para azul padrão."
+)
+async def aviso(
+    interaction: discord.Interaction, 
+    mensagem: str, 
+    titulo: Optional[str] = None, 
+    cor: Optional[str] = None
+):
+    # Verificação de permissão (apenas Mods ou Admins)
+    is_mod = any(role.name.lower() == "mods" for role in interaction.user.roles)
+    if not is_mod and not interaction.user.guild_permissions.administrator:
+        return await interaction.response.send_message("❌ Você não tem permissão para usar este comando.", ephemeral=True)
+
+    # Tratamento da cor
+    cor_final = 0x3498db # Azul padrão
+    if cor:
+        try:
+            cor_final = int(cor.replace("#", ""), 16)
+        except ValueError:
+            pass
+
+    await interaction.response.defer(ephemeral=True)
+
+    try:
+        if titulo:
+            # Envia como Embed
+            embed = discord.Embed(
+                title=f"📢 {titulo}",
+                description=mensagem,
+                color=cor_final,
+                timestamp=datetime.datetime.now()
+            )
+            if interaction.guild.icon:
+                embed.set_thumbnail(url=interaction.guild.icon.url)
+            
+            embed.set_footer(text=f"Enviado por: {interaction.user.name}", icon_url=interaction.user.display_avatar.url)
+            
+            await interaction.channel.send(content="@everyone", embed=embed)
+        else:
+            # Envia como texto simples
+            texto_formatado = f"📢 **AVISO - ARC RAIDERS BRASIL**\n\n@everyone\n\n{mensagem}"
+            await interaction.channel.send(content=texto_formatado)
+
+        await interaction.followup.send("✅ Aviso enviado com sucesso!", ephemeral=True)
+
+    except Exception as e:
+        await interaction.followup.send(f"❌ Erro ao enviar aviso: {e}", ephemeral=True)
+
+# Variável global para calcular o uptime
+start_time = time.time()
+
+@bot.tree.command(name="status", description="Exibe o status técnico do bot e do sistema")
+async def status(interaction: discord.Interaction):
+    # Verificação de permissão (Mods ou Admins)
+    is_mod = any(role.name.lower() == "mods" for role in interaction.user.roles)
+    if not is_mod and not interaction.user.guild_permissions.administrator:
+        return await interaction.response.send_message("❌ Acesso restrito aos protocolos de Staff.", ephemeral=True)
+
+    # Cálculo de Uptime
+    current_time = time.time()
+    uptime_seconds = int(current_time - start_time)
+    uptime_str = str(datetime.timedelta(seconds=uptime_seconds))
+
+    # Teste de conexão com o Banco de Dados
+    db_status = "🟢 Conectado"
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('SELECT 1')
+        cur.close()
+        conn.close()
+    except Exception:
+        db_status = "🔴 Desconectado"
+
+    # Informações de Latência
+    ping = round(bot.latency * 1000)
+
+    embed = discord.Embed(
+        title="⚙️ STATUS DO TERMINAL - ARC RAIDERS BRASIL",
+        color=0x2ecc71 if db_status == "🟢 Conectado" else 0xe74c3c,
+        timestamp=datetime.datetime.now()
+    )
+    
+    embed.add_field(name="🛰️ Latência (Ping)", value=f"`{ping}ms`", inline=True)
+    embed.add_field(name="⏳ Uptime", value=f"`{uptime_str}`", inline=True)
+    embed.add_field(name="🗄️ Banco de Dados (Postgres)", value=f"`{db_status}`", inline=False)
+    embed.add_field(name="💻 Hospedagem", value="`Railway.app`", inline=True)
+    embed.add_field(name="🐍 Versão Python", value="`3.11`", inline=True)
+
+    if interaction.guild.icon:
+        embed.set_thumbnail(url=interaction.guild.icon.url)
+    
+    embed.set_footer(text="Sistema operacional operando dentro dos parâmetros.")
+
+    await interaction.response.send_message(embed=embed)
+
 # --- EVENTOS DE CANAIS E TÓPICOS ---
 
 @bot.event
@@ -323,19 +455,32 @@ async def on_voice_state_update(member, before, after):
     cat_duo = 1486347910885937242
     cat_trio = 1486348090741883114
 
+    # 1. Lógica para criar canais (Quando alguém entra no canal gerador)
     if after.channel:
         if after.channel.id == gen_duo:
-            category = bot.get_channel(cat_duo)
+            category = interaction.guild.get_channel(cat_duo) if hasattr(member, 'guild') else bot.get_channel(cat_duo)
+            # Se member.guild.get_channel falhar, usamos bot.get_channel
+            category = member.guild.get_channel(cat_duo)
             ch = await member.guild.create_voice_channel(name=f"Duo: {member.name}", category=category, user_limit=2)
             await member.move_to(ch)
+            
         elif after.channel.id == gen_trio:
-            category = bot.get_channel(cat_trio)
+            category = member.guild.get_channel(cat_trio)
             ch = await member.guild.create_voice_channel(name=f"Trio: {member.name}", category=category, user_limit=3)
             await member.move_to(ch)
 
-    # Deletar canais vazios
-    if before.channel and "Duo:" in before.channel.name or "Trio:" in before.channel.name:
-        if len(before.channel.members) == 0:
-            await before.channel.delete()
+    # 2. Lógica para deletar canais vazios (Quando alguém sai de um canal)
+    if before.channel:
+        # Verificamos se o canal tem um nome e se ele começa com nossos prefixos
+        channel_name = before.channel.name
+        if channel_name.startswith("Duo:") or channel_name.startswith("Trio:"):
+            # Se não houver mais ninguém no canal, deletamos
+            if len(before.channel.members) == 0:
+                try:
+                    await before.channel.delete()
+                except discord.NotFound:
+                    pass # Canal já foi deletado
+                except discord.Forbidden:
+                    print(f"Erro: Sem permissão para deletar canal {channel_name}")
 
 bot.run(os.getenv('TOKEN'))
