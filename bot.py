@@ -505,12 +505,11 @@ async def status(interaction: discord.Interaction):
     app_commands.Choice(name="TRIO (3 pessoas)", value="trio")
 ])
 async def raid_post(interaction: discord.Interaction, tipo: app_commands.Choice[str], mapa: str, objetivo: str):
-    # Cálculo de variáveis antes de enviar
     vagas = 2 if tipo.value == "duo" else 3
     cat = 1486347910885937242 if tipo.value == "duo" else 1486348090741883114
 
 # Cria a View APENAS aqui, e não no setup_hook
-    view = RaidView(interaction.user, vagas, mapa, objetivo, cat)
+    view = RaidView(interaction.user, vagas, mapa, objetivo, cat, vagas) 
     await interaction.response.send_message(embed=view.gerar_embed(), view=view)
 
 # --- EVENTOS DE CANAIS E TÓPICOS ---
