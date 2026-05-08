@@ -424,26 +424,70 @@ async def status(interaction: discord.Interaction):
 
 @bot.event
 async def on_thread_create(thread):
+    # ID do canal de fórum/trocas
     if thread.parent_id == 1434310955004592360:
         view = discord.ui.View(timeout=None)
-        btn = discord.ui.Button(label="Finalizar e Excluir", style=discord.ButtonStyle.red)
+        btn = discord.ui.Button(
+            label="Finalizar e Excluir Tópico", 
+            style=discord.ButtonStyle.red,
+            emoji="🗑️"
+        )
 
         async def btn_callback(interaction: discord.Interaction):
+            # Verifica se é o dono do tópico ou se tem cargo 'mods'
             is_mod = any(role.name.lower() == "mods" for role in interaction.user.roles)
+            
             if interaction.user.id == thread.owner_id or is_mod:
+                await interaction.response.defer() # Dá tempo ao bot para processar o log
+                
                 log_chan = bot.get_channel(1433136439456956576)
-                await log_chan.send(f"📦 Troca Finalizada: {thread.name} (Autor: <@{thread.owner_id}>)")
+                
+                # --- GERAÇÃO DO LOG TXT ---
+                history_text = f"LOG DE TROCA - ARC RAIDERS BRASIL\nTópico: {thread.name}\nID: {thread.id}\nAutor: {thread.owner_id}\nFechado por: {interaction.user.name}\nData: {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}\n"
+                history_text += "-"*50 + "\n\n"
+                
+                async for msg in thread.history(limit=None, oldest_first=True):
+                    timestamp = msg.created_at.strftime('%d/%m/%Y %H:%M')
+                    history_text += f"[{timestamp}] {msg.author.name}: {msg.content}\n"
+
+                # Cria o arquivo em memória
+                file_data = io.BytesIO(history_text.encode('utf-8'))
+                log_file = discord.File(file_data, filename=f"troca-{thread.id}.txt")
+                
+                if log_chan:
+                    await log_chan.send(
+                        content=f"🗑️ **Tópico de Troca Encerrado**\n**Nome:** `{thread.name}`\n**Autor:** <@{thread.owner_id}>\n**Fechado por:** {interaction.user.mention}",
+                        file=log_file
+                    )
+                
+                await interaction.followup.send("Log gerado. Excluindo tópico...")
                 await thread.delete()
             else:
-                await interaction.response.send_message("Você não tem permissão para fechar este tópico.", ephemeral=True)
+                await interaction.response.send_message("❌ Apenas o autor da troca ou a Staff pode finalizar este tópico.", ephemeral=True)
 
         btn.callback = btn_callback
         view.add_item(btn)
 
-        await thread.send(
-            content=f"Nova Troca Iniciada!\nOlá <@{thread.owner_id}>, bem-vindo ao sistema de trocas!Dicas de Segurança:\nVerifique a reputação de alguém usando o comando /perfil @membro antes fazer uma troca.\n\nUse o comando /rep @membro apenas após a troca ser concluída com sucesso.\n\nApós finalizada a troca, clique abaixo no botão para finalizar e excluir o tópico.\n\nSe por acaso for scammado, abra um ticket acionando nossos mods imediatamente e use o comando /neg @membro para negativar o raider.\n\nRMT: Compra e venda de itens com dinheiro real é PROIBIDO e passivo de banimento aqui e no jogo, cuida.",
-            view=view
+        # Criando o Embed para a mensagem de boas-vindas da troca
+        embed = discord.Embed(
+            title="📦 NOVA TROCA INICIADA!",
+            description=(
+                f"Olá <@{thread.owner_id}>, bem-vindo ao sistema de trocas!\n\n"
+                "🛡️ **Dicas de Segurança:**\n"
+                "• Verifique a reputação usando `/perfil @membro` antes de negociar.\n"
+                "• Use o comando `/rep @membro` **apenas após** a troca ser concluída.\n"
+                "• Se for scammado, abra um ticket imediatamente e use `/neg @membro`.\n\n"
+                "🚫 **Aviso sobre RMT:**\n"
+                "Compra e venda por dinheiro real é **PROIBIDO** e resulta em banimento.\n\n"
+                "⚠️ **Finalização:**\n"
+                "Após concluir o negócio, clique no botão abaixo para encerrar o tópico."
+            ),
+            color=0xf39c12
         )
+        
+        embed.set_footer(text="ARC Raiders Brasil - Sistema de Trocas e Reputação")
+        
+        await thread.send(content=f"Atenção <@{thread.owner_id}>!", embed=embed, view=view)
 
 @bot.event
 async def on_voice_state_update(member, before, after):
@@ -452,35 +496,48 @@ async def on_voice_state_update(member, before, after):
     gen_trio = 1486348629550825653
     
     # Categorias
-    cat_duo = 1486347910885937242
-    cat_trio = 1486348090741883114
+    cat_duo_id = 1486347910885937242
+    cat_trio_id = 1486348090741883114
 
-    # 1. Lógica para criar canais (Quando alguém entra no canal gerador)
+    # 1. Lógica para CRIAR canais
     if after.channel:
+        # Se entrou no gerador de DUO
         if after.channel.id == gen_duo:
-            category = interaction.guild.get_channel(cat_duo) if hasattr(member, 'guild') else bot.get_channel(cat_duo)
-            # Se member.guild.get_channel falhar, usamos bot.get_channel
-            category = member.guild.get_channel(cat_duo)
-            ch = await member.guild.create_voice_channel(name=f"Duo: {member.name}", category=category, user_limit=2)
-            await member.move_to(ch)
+            guild = member.guild
+            category = guild.get_channel(cat_duo_id)
             
+            new_channel = await guild.create_voice_channel(
+                name=f"Duo: {member.name}", 
+                category=category, 
+                user_limit=2
+            )
+            await member.move_to(new_channel)
+            
+        # Se entrou no gerador de TRIO
         elif after.channel.id == gen_trio:
-            category = member.guild.get_channel(cat_trio)
-            ch = await member.guild.create_voice_channel(name=f"Trio: {member.name}", category=category, user_limit=3)
-            await member.move_to(ch)
+            guild = member.guild
+            category = guild.get_channel(cat_trio_id)
+            
+            new_channel = await guild.create_voice_channel(
+                name=f"Trio: {member.name}", 
+                category=category, 
+                user_limit=3
+            )
+            await member.move_to(new_channel)
 
-    # 2. Lógica para deletar canais vazios (Quando alguém sai de um canal)
+    # 2. Lógica para DELETAR canais vazios
     if before.channel:
-        # Verificamos se o canal tem um nome e se ele começa com nossos prefixos
-        channel_name = before.channel.name
-        if channel_name.startswith("Duo:") or channel_name.startswith("Trio:"):
-            # Se não houver mais ninguém no canal, deletamos
-            if len(before.channel.members) == 0:
-                try:
-                    await before.channel.delete()
-                except discord.NotFound:
-                    pass # Canal já foi deletado
-                except discord.Forbidden:
-                    print(f"Erro: Sem permissão para deletar canal {channel_name}")
+        # Verifica se o canal que o membro saiu é um dos criados pelo bot
+        # Checamos se ele está dentro das categorias de Raid e se não é o canal gerador
+        if before.channel.category_id in [cat_duo_id, cat_trio_id]:
+            if before.channel.id not in [gen_duo, gen_trio]:
+                # Se o canal ficou vazio, deleta
+                if len(before.channel.members) == 0:
+                    try:
+                        await before.channel.delete()
+                    except discord.NotFound:
+                        pass
+                    except Exception as e:
+                        print(f"Erro ao deletar canal vazio: {e}")
 
 bot.run(os.getenv('TOKEN'))
