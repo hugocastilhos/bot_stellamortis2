@@ -42,6 +42,7 @@ class ARC_Bot(commands.Bot):
         # Registra as Views persistentes (para botões não pararem de funcionar)
         self.add_view(RegrasView())
         self.add_view(SuporteView())
+        self.add_view(RaidView())
         await self.tree.sync()
 
 bot = ARC_Bot()
@@ -154,6 +155,74 @@ class SuporteView(discord.ui.View):
         embed.set_footer(text="Use o botão abaixo para encerrar o atendimento.")
         await channel.send(embed=embed, view=TicketActionView())
         await interaction.response.send_message(f"Ticket aberto em {channel.mention}", ephemeral=True)
+
+class RaidView(discord.ui.View):
+    def __init__(self, autor, vagas_totais, mapa, objetivo, cat_id, limit):
+        super().__init__(timeout=3600)
+        self.autor = autor
+        self.vagas_totais = vagas_totais
+        self.participantes = [autor]
+        self.mapa = mapa
+        self.objetivo = objetivo
+        self.cat_id = cat_id
+        self.limit = limit
+
+    def gerar_embed(self, encerrado=False):
+        restantes = self.vagas_totais - len(self.participantes)
+        lista_membros = "\n".join([f"• {p.mention}" for p in self.participantes])
+        
+        cor = 0x2ecc71 if encerrado else 0xe67e22
+        titulo = "✅ SQUAD FORMADO" if encerrado else "🚨 RECRUTAMENTO DE RAID"
+
+        embed = discord.Embed(title=titulo, color=cor)
+        embed.add_field(name="Informações", value=f"**Mapa:** `{self.mapa}`\n**Objetivo:** `{self.objetivo}`\n**Tipo:** `{'DUO' if self.limit == 2 else 'TRIO'}`", inline=False)
+        embed.add_field(name=f"Operadores ({len(self.participantes)}/{self.vagas_totais})", value=lista_membros, inline=False)
+        
+        if not encerrado:
+            embed.set_footer(text=f"Aguardando mais {restantes} raider(s)...")
+        else:
+            embed.set_footer(text=f"Aguardando {self.autor.name} iniciar o canal de voz.")
+        return embed
+
+    @discord.ui.button(label="Participar", style=discord.ButtonStyle.green, emoji="🔫", custom_id="btn_participar")
+    async def participar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id in [p.id for p in self.participantes]:
+            return await interaction.response.send_message("Você já está neste squad!", ephemeral=True)
+        
+        self.participantes.append(interaction.user)
+
+        if len(self.participantes) >= self.vagas_totais:
+            # Desabilita o botão participar e limpa a view para adicionar o botão do líder
+            self.clear_items()
+            btn_gerar = discord.ui.Button(label="Criar Canal de Voz", style=discord.ButtonStyle.primary, emoji="🔊")
+            
+            async def gerar_callback(inter: discord.Interaction):
+                if inter.user.id != self.autor.id:
+                    return await inter.response.send_message("Apenas o líder do squad pode iniciar o canal.", ephemeral=True)
+                
+                guild = inter.guild
+                category = guild.get_channel(self.cat_id)
+                prefixo = "Duo" if self.limit == 2 else "Trio"
+                
+                new_channel = await guild.create_voice_channel(
+                    name=f"{prefixo}: {self.autor.name}",
+                    category=category,
+                    user_limit=self.limit
+                )
+                
+                await inter.response.send_message(f"✅ Canal {new_channel.mention} criado com sucesso!", ephemeral=True)
+                # Remove o botão após criar o canal
+                self.clear_items()
+                await inter.edit_original_response(view=self)
+                self.stop()
+
+            btn_gerar.callback = gerar_callback
+            self.add_item(btn_gerar)
+            
+            mencoes = " ".join([p.mention for p in self.participantes])
+            await interaction.response.edit_message(content=f"🚀 {mencoes} **O SQUAD ESTÁ PRONTO!**", embed=self.gerar_embed(encerrado=True), view=self)
+        else:
+            await interaction.response.edit_message(embed=self.gerar_embed(), view=self)
 
 # --- COMANDOS ---
 
@@ -419,6 +488,39 @@ async def status(interaction: discord.Interaction):
     embed.set_footer(text="Sistema operacional operando dentro dos parâmetros.")
 
     await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="raid_post", description="Posta um recrutamento para Raid (Duo ou Trio)")
+@app_commands.describe(
+    tipo="Selecione Duo ou Trio",
+    mapa="Qual mapa vocês vão jogar?",
+    objetivo="O que pretendem fazer? (Ex: Farmar Fusion Core)"
+)
+@app_commands.choices(tipo=[
+    app_commands.Choice(name="DUO (2 pessoas)", value="duo"),
+    app_commands.Choice(name="TRIO (3 pessoas)", value="trio")
+])
+async def raid_post(interaction: discord.Interaction, tipo: app_commands.Choice[str], mapa: str, objetivo: str):
+    # IDs de Categoria conforme solicitado
+    if tipo.value == "duo":
+        vagas = 2
+        cat_id = 1486347910885937242
+    else:
+        vagas = 3
+        cat_id = 1486348090741883114
+
+    view = RaidView(
+        autor=interaction.user,
+        vagas_totais=vagas,
+        mapa=mapa,
+        objetivo=objetivo,
+        cat_id=cat_id,
+        limit=vagas
+    )
+    
+    await interaction.response.send_message(
+        embed=view.gerar_embed(),
+        view=view
+    )
 
 # --- EVENTOS DE CANAIS E TÓPICOS ---
 
