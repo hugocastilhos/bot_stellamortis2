@@ -8,6 +8,10 @@ import os
 import io
 from dotenv import load_dotenv
 from typing import Optional
+import requests
+from bs4 import BeautifulSoup
+from discord.ext import tasks
+
 load_dotenv()
 TOKEN = os.getenv('TOKEN')
 
@@ -33,6 +37,70 @@ def init_db():
 
 init_db()
 
+@tasks.loop(minutes=10) # Site oficial não muda tão rápido, 10 min é o ideal
+async def monitorar_condicoes_mapa():
+    canal_id = 1455200454173790208  # ID do seu canal de logs/eventos
+    canal = bot.get_channel(canal_id)
+    if not canal:
+        return
+
+    url = "https://arcraiders.com/pt-BR/map-conditions"
+    # User-Agent atualizado para evitar ser bloqueado pelo firewall do site
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+
+    try:
+        response = requests.get(url, headers=headers, timeout=15)
+        if response.status_code != 200:
+            print(f"Erro ao acessar site oficial: Status {response.status_code}")
+            return
+
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # O site da Embark organiza as condições em blocos de regiões.
+        # Estamos buscando os títulos das regiões e as descrições dos eventos.
+        embed = discord.Embed(
+            title="🌍 CONDIÇÕES DOS MAPAS - ARC RAIDERS",
+            url=url,
+            description="Informações oficiais sobre o estado atual das zonas de incursão.",
+            color=0xf1c40f, # Amarelo oficial
+            timestamp=datetime.datetime.now()
+        )
+
+        # Seletores baseados na estrutura comum do site oficial (ajuste conforme necessário)
+        # Geralmente usam classes como 'map-card' ou tags de seções.
+        secoes = soup.find_all(["section", "div"], class_=lambda x: x and 'condition' in x.lower())
+
+        if not secoes:
+            # Fallback caso a raspagem falhe por mudança de layout
+            embed.add_field(
+                name="🛰️ Status do Satélite", 
+                value="Os dados estão sendo processados. Acesse o [Link Oficial](https://arcraiders.com/pt-BR/map-conditions) para visualização completa."
+            )
+        else:
+            for secao in secoes[:6]: # Limite de 6 campos para não poluir
+                titulo = secao.find(["h2", "h3"])
+                info = secao.find(["p", "span"])
+                
+                nome_mapa = titulo.get_text(strip=True) if titulo else "Região Desconhecida"
+                detalhe = info.get_text(strip=True) if info else "Sem anomalias detectadas."
+                
+                embed.add_field(name=f"📍 {nome_mapa}", value=f"📝 {detalhe}", inline=False)
+
+        embed.set_footer(text="Dados obtidos via arcraiders.com")
+        
+        # Lógica para editar a última mensagem de status do bot (evita spam)
+        async for msg in canal.history(limit=10):
+            if msg.author == bot.user and msg.embeds and "CONDIÇÕES DOS MAPAS" in msg.embeds[0].title:
+                await msg.edit(embed=embed)
+                return
+        
+        await canal.send(embed=embed)
+
+    except Exception as e:
+        print(f"Erro na tarefa de monitoramento: {e}")
+
 class ARC_Bot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.all() # Necessário para gerenciar cargos e canais
@@ -51,6 +119,12 @@ async def setup_hook(self):
         print("✅ Comandos de barra sincronizados com sucesso!")
 
 bot = ARC_Bot()
+
+@bot.event
+async def on_ready():
+    print(f'🤖 {bot.user.name} online e monitorando o mapa!')
+    if not monitorar_condicoes_mapa.is_running():
+        monitorar_condicoes_mapa.start()
 
 # --- UTILS REPUTAÇÃO ---
 
@@ -513,7 +587,6 @@ async def raid_post(interaction: discord.Interaction, tipo: app_commands.Choice[
     await interaction.response.send_message(embed=view.gerar_embed(), view=view)
 
 # --- EVENTOS DE CANAIS E TÓPICOS ---
-
 @bot.event
 async def on_thread_create(thread):
     # ID do canal de fórum/trocas
