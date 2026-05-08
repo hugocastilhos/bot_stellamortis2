@@ -9,6 +9,7 @@ import io
 from dotenv import load_dotenv
 from typing import Optional
 import requests
+import asyncio
 
 load_dotenv()
 TOKEN = os.getenv('TOKEN')
@@ -515,10 +516,19 @@ async def raid_post(interaction: discord.Interaction, tipo: app_commands.Choice[
     await interaction.response.send_message(embed=view.gerar_embed(), view=view)
 
 # --- EVENTOS DE CANAIS E TÓPICOS ---
+import io # Necessário para o log TXT
+import datetime # Necessário para a data do log
+import asyncio # Necessário para o sleep
+
 @bot.event
 async def on_thread_create(thread):
     # ID do canal de fórum/trocas
     if thread.parent_id == 1434310955004592360:
+        
+        # 1. ESPERA O DISCORD PROCESSAR A CRIAÇÃO
+        # Isso evita o erro 403 (Cannot message this thread until after...)
+        await asyncio.sleep(2) 
+
         view = discord.ui.View(timeout=None)
         btn = discord.ui.Button(
             label="Finalizar e Excluir Tópico", 
@@ -531,7 +541,7 @@ async def on_thread_create(thread):
             is_mod = any(role.name.lower() == "mods" for role in interaction.user.roles)
             
             if interaction.user.id == thread.owner_id or is_mod:
-                await interaction.response.defer() # Dá tempo ao bot para processar o log
+                await interaction.response.defer() 
                 
                 log_chan = bot.get_channel(1433136439456956576)
                 
@@ -543,7 +553,7 @@ async def on_thread_create(thread):
                     timestamp = msg.created_at.strftime('%d/%m/%Y %H:%M')
                     history_text += f"[{timestamp}] {msg.author.name}: {msg.content}\n"
 
-                # Cria o arquivo em memória
+                # Cria o arquivo em memória usando o módulo io
                 file_data = io.BytesIO(history_text.encode('utf-8'))
                 log_file = discord.File(file_data, filename=f"troca-{thread.id}.txt")
                 
@@ -553,8 +563,11 @@ async def on_thread_create(thread):
                         file=log_file
                     )
                 
-                await interaction.followup.send("Log gerado. Excluindo tópico...")
-                await thread.delete()
+                try:
+                    await interaction.followup.send("Log gerado. Excluindo tópico...")
+                    await thread.delete()
+                except discord.errors.NotFound:
+                    pass # Tópico já foi deletado
             else:
                 await interaction.response.send_message("❌ Apenas o autor da troca ou a Staff pode finalizar este tópico.", ephemeral=True)
 
@@ -580,7 +593,13 @@ async def on_thread_create(thread):
         
         embed.set_footer(text="ARC Raiders Brasil - Sistema de Trocas e Reputação")
         
-        await thread.send(content=f"Atenção <@{thread.owner_id}>!", embed=embed, view=view)
+        # 2. TENTA ENVIAR A MENSAGEM TRATANDO POSSÍVEIS ERROS
+        try:
+            await thread.send(content=f"Atenção <@{thread.owner_id}>!", embed=embed, view=view)
+        except discord.errors.Forbidden:
+            print(f"Erro 403 ao enviar mensagem na thread {thread.id}. O autor pode não ter enviado a mensagem inicial ainda.")
+        except Exception as e:
+            print(f"Erro inesperado no thread_create: {e}")
 
 # Lista simples para controlar quem já está criando canal (evita spam)
 processando_voz = set()
