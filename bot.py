@@ -42,7 +42,6 @@ class ARC_Bot(commands.Bot):
         # Registra as Views persistentes (para botões não pararem de funcionar)
         self.add_view(RegrasView())
         self.add_view(SuporteView())
-        self.add_view(RaidView())
         await self.tree.sync()
 
 bot = ARC_Bot()
