@@ -9,8 +9,6 @@ import io
 from dotenv import load_dotenv
 from typing import Optional
 import requests
-from bs4 import BeautifulSoup
-from discord.ext import tasks
 
 load_dotenv()
 TOKEN = os.getenv('TOKEN')
@@ -37,77 +35,6 @@ def init_db():
 
 init_db()
 
-@tasks.loop(minutes=10)
-async def monitorar_condicoes_mapa():
-    canal_id = 1433136439456956576  # ID do seu canal
-    canal = bot.get_channel(canal_id)
-    if not canal:
-        return
-
-    url = "https://arcraiders.com/pt-BR/map-conditions"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
-
-    try:
-        response = requests.get(url, headers=headers, timeout=15)
-        if response.status_code != 200:
-            return
-
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        embed = discord.Embed(
-            title="🌍 CONDIÇÕES DOS MAPAS - ARC RAIDERS",
-            url=url,
-            description="Relatório de inteligência sobre anomalias e eventos.",
-            color=0xf1c40f,
-            timestamp=datetime.datetime.now()
-        )
-
-        # 1. BUSCAR EVENTOS ATIVOS (Active Now)
-        # O site costuma usar classes como 'active' ou 'current' para o que está rolando agora
-        ativos = soup.find_all(class_=lambda x: x and 'active' in x.lower())
-        if ativos:
-            lista_ativos = ""
-            for item in ativos[:3]: # Pega os 3 primeiros
-                txt = item.get_text(strip=True)
-                if txt: lista_ativos += f"🔴 **{txt}**\n"
-            
-            if lista_ativos:
-                embed.add_field(name="🔥 ATIVO AGORA", value=lista_ativos, inline=False)
-
-        # 2. BUSCAR PRÓXIMOS EVENTOS (Coming Up)
-        # O site costuma usar 'coming' ou 'next' para os futuros
-        proximos = soup.find_all(class_=lambda x: x and 'coming' in x.lower())
-        if proximos:
-            lista_proximos = ""
-            for item in proximos[:3]:
-                txt = item.get_text(strip=True)
-                if txt: lista_proximos += f"⏳ *{txt}*\n"
-            
-            if lista_proximos:
-                embed.add_field(name="📅 EM BREVE", value=lista_proximos, inline=False)
-
-        # Caso a raspagem por classe falhe (site dinâmico), mantém um aviso
-        if not embed.fields:
-            embed.description = "🛰️ **Sinal instável.** Verifique o status detalhado no [Site Oficial](https://arcraiders.com/pt-BR/map-conditions)."
-
-        embed.set_footer(text="Atualização automática | Fonte: arcraiders.com")
-
-        # 3. LIMPEZA E ENVIO
-        async for mensagem in canal.history(limit=15):
-            if mensagem.author == bot.user and mensagem.embeds:
-                if "CONDIÇÕES DOS MAPAS" in mensagem.embeds[0].title:
-                    try:
-                        await mensagem.delete()
-                    except:
-                        pass
-
-        await canal.send(embed=embed)
-
-    except Exception as e:
-        print(f"Erro ao monitorar site: {e}")
-
 class ARC_Bot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.all() # Necessário para gerenciar cargos e canais
@@ -126,12 +53,6 @@ async def setup_hook(self):
         print("✅ Comandos de barra sincronizados com sucesso!")
 
 bot = ARC_Bot()
-
-@bot.event
-async def on_ready():
-    print(f'🤖 {bot.user.name} online e monitorando o mapa!')
-    if not monitorar_condicoes_mapa.is_running():
-        monitorar_condicoes_mapa.start()
 
 # --- UTILS REPUTAÇÃO ---
 
@@ -661,55 +582,49 @@ async def on_thread_create(thread):
         
         await thread.send(content=f"Atenção <@{thread.owner_id}>!", embed=embed, view=view)
 
+# Lista simples para controlar quem já está criando canal (evita spam)
+processando_voz = set()
+
 @bot.event
 async def on_voice_state_update(member, before, after):
-    # IDs de geradores de canal
-    gen_duo = 1486348560822960128
-    gen_trio = 1486348629550825653
+    gen_duo, gen_trio = 1486348560822960128, 1486348629550825653
     
-    # Categorias
-    cat_duo_id = 1486347910885937242
-    cat_trio_id = 1486348090741883114
-
-    # 1. Lógica para CRIAR canais
-    if after.channel:
-        # Se entrou no gerador de DUO
-        if after.channel.id == gen_duo:
-            guild = member.guild
-            category = guild.get_channel(cat_duo_id)
+    # Se o usuário entrou em um gerador e não está na lista de espera
+    if after.channel and after.channel.id in [gen_duo, gen_trio]:
+        if member.id in processando_voz:
+            return # Já estamos criando um canal para ele, ignore
             
-            new_channel = await guild.create_voice_channel(
-                name=f"Duo: {member.name}", 
-                category=category, 
-                user_limit=2
+        processando_voz.add(member.id)
+        
+        try:
+            vagas = 2 if after.channel.id == gen_duo else 3
+            cat_id = 1486347910885937242 if vagas == 2 else 1486348090741883114
+            cat = member.guild.get_channel(cat_id)
+            
+            # Pequeno delay de segurança para a API respirar
+            await asyncio.sleep(1) 
+            
+            ch = await member.guild.create_voice_channel(
+                name=f"{'Duo' if vagas==2 else 'Trio'}: {member.name}", 
+                category=cat, 
+                user_limit=vagas
             )
-            await member.move_to(new_channel)
+            await member.move_to(ch)
             
-        # Se entrou no gerador de TRIO
-        elif after.channel.id == gen_trio:
-            guild = member.guild
-            category = guild.get_channel(cat_trio_id)
-            
-            new_channel = await guild.create_voice_channel(
-                name=f"Trio: {member.name}", 
-                category=category, 
-                user_limit=3
-            )
-            await member.move_to(new_channel)
+        except discord.errors.HTTPException as e:
+            if e.status == 429:
+                print(f"🚨 RATE LIMIT ATIVO! Aguardando para tentar novamente...")
+        finally:
+            # Remove da lista após 5 segundos para permitir nova criação futura
+            await asyncio.sleep(5)
+            processando_voz.discard(member.id)
 
-    # 2. Lógica para DELETAR canais vazios
-    if before.channel:
-        # Verifica se o canal que o membro saiu é um dos criados pelo bot
-        # Checamos se ele está dentro das categorias de Raid e se não é o canal gerador
-        if before.channel.category_id in [cat_duo_id, cat_trio_id]:
-            if before.channel.id not in [gen_duo, gen_trio]:
-                # Se o canal ficou vazio, deleta
-                if len(before.channel.members) == 0:
-                    try:
-                        await before.channel.delete()
-                    except discord.NotFound:
-                        pass
-                    except Exception as e:
-                        print(f"Erro ao deletar canal vazio: {e}")
+    # Lógica de apagar canal vazio (Mantenha como está, mas com try/except)
+    if before.channel and (before.channel.name.startswith("Duo:") or before.channel.name.startswith("Trio:")):
+        if len(before.channel.members) == 0:
+            try:
+                await before.channel.delete()
+            except:
+                pass
 
 bot.run(os.getenv('TOKEN'))
