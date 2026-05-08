@@ -14,4 +14,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Comando para rodar o bot (sem o caminho /app/, pois já estamos dentro dele)
-CMD ["python", "bot_rep.py"]
+CMD ["python", "bot.py"]
