@@ -37,66 +37,61 @@ def init_db():
 
 init_db()
 
-@tasks.loop(minutes=10) # Site oficial não muda tão rápido, 10 min é o ideal
+@tasks.loop(minutes=10)
 async def monitorar_condicoes_mapa():
-    canal_id = 1455200454173790208  # ID do seu canal de logs/eventos
+    canal_id = 1433136439456956576  # ID do canal de eventos
     canal = bot.get_channel(canal_id)
     if not canal:
         return
 
     url = "https://arcraiders.com/pt-BR/map-conditions"
-    # User-Agent atualizado para evitar ser bloqueado pelo firewall do site
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
 
     try:
+        # 1. PEGAR AS INFORMAÇÕES DO SITE
         response = requests.get(url, headers=headers, timeout=15)
-        if response.status_code != 200:
-            print(f"Erro ao acessar site oficial: Status {response.status_code}")
-            return
+        if response.status_code != 200: return
 
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # O site da Embark organiza as condições em blocos de regiões.
-        # Estamos buscando os títulos das regiões e as descrições dos eventos.
         embed = discord.Embed(
             title="🌍 CONDIÇÕES DOS MAPAS - ARC RAIDERS",
             url=url,
-            description="Informações oficiais sobre o estado atual das zonas de incursão.",
-            color=0xf1c40f, # Amarelo oficial
+            description="Status atual das zonas de incursão.",
+            color=0xf1c40f,
             timestamp=datetime.datetime.now()
         )
 
-        # Seletores baseados na estrutura comum do site oficial (ajuste conforme necessário)
-        # Geralmente usam classes como 'map-card' ou tags de seções.
+        # (Lógica de captura simplificada para o exemplo)
         secoes = soup.find_all(["section", "div"], class_=lambda x: x and 'condition' in x.lower())
-
         if not secoes:
-            # Fallback caso a raspagem falhe por mudança de layout
-            embed.add_field(
-                name="🛰️ Status do Satélite", 
-                value="Os dados estão sendo processados. Acesse o [Link Oficial](https://arcraiders.com/pt-BR/map-conditions) para visualização completa."
-            )
+            embed.add_field(name="🛰️ Status", value="Dados em processamento. Confira o site oficial.")
         else:
-            for secao in secoes[:6]: # Limite de 6 campos para não poluir
+            for secao in secoes[:6]:
                 titulo = secao.find(["h2", "h3"])
                 info = secao.find(["p", "span"])
-                
-                nome_mapa = titulo.get_text(strip=True) if titulo else "Região Desconhecida"
-                detalhe = info.get_text(strip=True) if info else "Sem anomalias detectadas."
-                
-                embed.add_field(name=f"📍 {nome_mapa}", value=f"📝 {detalhe}", inline=False)
+                nome = titulo.get_text(strip=True) if titulo else "Região"
+                detalhe = info.get_text(strip=True) if info else "Estável"
+                embed.add_field(name=f"📍 {nome}", value=f"📝 {detalhe}", inline=False)
 
-        embed.set_footer(text="Dados obtidos via arcraiders.com")
-        
-        # Lógica para editar a última mensagem de status do bot (evita spam)
-        async for msg in canal.history(limit=10):
-            if msg.author == bot.user and msg.embeds and "CONDIÇÕES DOS MAPAS" in msg.embeds[0].title:
-                await msg.edit(embed=embed)
-                return
-        
+        embed.set_footer(text="Esta mensagem será auto-substituída em 10 minutos.")
+
+        # --- 2. LÓGICA DE APAGAR A ANTERIOR ---
+        # Procuramos nas últimas 20 mensagens do canal
+        async for mensagem in canal.history(limit=20):
+            # Se a mensagem for do bot e tiver o título do nosso Embed de eventos
+            if mensagem.author == bot.user and mensagem.embeds:
+                if mensagem.embeds[0].title == "🌍 CONDIÇÕES DOS MAPAS - ARC RAIDERS":
+                    try:
+                        await mensagem.delete()
+                    except:
+                        pass # Caso a mensagem já tenha sido apagada ou erro de permissão
+
+        # --- 3. POSTAR A NOVA ---
         await canal.send(embed=embed)
+        print("✅ Eventos atualizados: Postagem antiga removida e nova enviada.")
 
     except Exception as e:
         print(f"Erro na tarefa de monitoramento: {e}")
