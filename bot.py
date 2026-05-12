@@ -540,6 +540,11 @@ import datetime # Necessário para a data do log
 import asyncio # Necessário para o sleep
 
 @bot.event
+async def on_ready():
+    await bot.tree.sync() # ISSO sincroniza os comandos com o Discord
+    print(f"✅ Comandos sincronizados e {bot.user} online!")
+
+@bot.event
 async def on_thread_create(thread):
     # ID do canal de fórum/trocas
     if thread.parent_id == 1434310955004592360:
