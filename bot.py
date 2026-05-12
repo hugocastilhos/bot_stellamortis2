@@ -4,7 +4,7 @@ from discord.ext import commands
 import psycopg2
 import time
 import datetime
-from datetime import datetime
+# from datetime import datetime
 import os
 import io
 from dotenv import load_dotenv
@@ -362,6 +362,9 @@ async def wipe(interaction: discord.Interaction):
     agora = datetime.now()
     diferenca = data_wipe - agora
     
+    if diferenca.total_seconds() <= 0:
+        return await interaction.response.send_message("🚨 O Wipe já aconteceu ou a data expirou!")
+
     dias = diferenca.days
     horas = diferenca.seconds // 3600
     
@@ -541,8 +544,13 @@ import asyncio # Necessário para o sleep
 
 @bot.event
 async def on_ready():
-    await bot.tree.sync() # ISSO sincroniza os comandos com o Discord
-    print(f"✅ Comandos sincronizados e {bot.user} online!")
+    print(f'🤖 Logado como {bot.user}')
+    try:
+        # Força a sincronização dos comandos de barra
+        synced = await bot.tree.sync()
+        print(f"✅ Sincronizados {len(synced)} comandos de barra!")
+    except Exception as e:
+        print(f"❌ Erro ao sincronizar: {e}")
 
 @bot.event
 async def on_thread_create(thread):
