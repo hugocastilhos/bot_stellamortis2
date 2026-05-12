@@ -4,6 +4,7 @@ from discord.ext import commands
 import psycopg2
 import time
 import datetime
+from datetime import datetime
 import os
 import io
 from dotenv import load_dotenv
@@ -353,6 +354,24 @@ async def perfil(interaction: discord.Interaction, membro: discord.Member = None
     embed.add_field(name="Reputação", value=str(pontos), inline=True)
     embed.add_field(name="Cargo de Troca", value=status, inline=True)
     embed.set_thumbnail(url=membro.display_avatar.url)
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="wipe", description="Veja quanto tempo falta para o fim da temporada")
+async def wipe(interaction: discord.Interaction):
+    data_wipe = datetime(2026, 6, 22, 7, 0) # Exemplo: 15 de Julho de 2026
+    agora = datetime.now()
+    diferenca = data_wipe - agora
+    
+    dias = diferenca.days
+    horas = diferenca.seconds // 3600
+    
+    embed = discord.Embed(
+        title="🗓️ CONTAGEM REGRESSIVA: RESET",
+        description=f"A temporada atual termina em:\n**{dias} dias e {horas} horas**",
+        color=0xe74c3c
+    )
+    embed.set_footer(text="Prepare seu estoque e gaste seus recursos!")
+    
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="limpar")
