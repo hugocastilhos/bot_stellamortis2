@@ -358,6 +358,7 @@ async def perfil(interaction: discord.Interaction, membro: discord.Member = None
 
 @bot.tree.command(name="wipe", description="Veja quanto tempo falta para o fim da temporada")
 async def wipe(interaction: discord.Interaction):
+    from datetime import datetime
     data_wipe = datetime(2026, 6, 22, 7, 0) # Exemplo: 15 de Julho de 2026
     agora = datetime.now()
     diferenca = data_wipe - agora
