@@ -98,10 +98,33 @@ class RegrasView(discord.ui.View):
 
     @discord.ui.button(label="Concordar e Aceitar Regras", style=discord.ButtonStyle.green, custom_id="regras_aceitar")
     async def concordar(self, interaction: discord.Interaction, button: discord.ui.Button):
-        role = discord.utils.get(interaction.guild.roles, name="speranza")
+        # 1. Tenta pegar o cargo pelo NOME exato (sensível a maiúsculas/minúsculas)
+        role_name = "speranza"
+        role = discord.utils.get(interaction.guild.roles, name=role_name)
+
+        # 2. Se falhar, tenta buscar no servidor (garante que não é erro de cache)
+        if not role:
+            role = discord.utils.get(await interaction.guild.fetch_roles(), name=role_name)
+
         if role:
-            await interaction.user.add_roles(role)
-            await interaction.response.send_message("Você concordou com as regras e recebeu o cargo `speranza`!", ephemeral=True)
+            try:
+                # Verifica se o usuário já tem o cargo para não dar erro
+                if role in interaction.user.roles:
+                    return await interaction.response.send_message("Você já aceitou as regras anteriormente!", ephemeral=True)
+                
+                await interaction.user.add_roles(role)
+                await interaction.response.send_message(f"✅ Você concordou com as regras e recebeu o cargo **{role.name}**!", ephemeral=True)
+                print(f"[LOG] Cargo entregue para {interaction.user.name}")
+                
+            except discord.Forbidden:
+                await interaction.response.send_message("❌ Erro de permissão: Meu cargo precisa estar ACIMA do cargo que estou tentando dar.", ephemeral=True)
+                print("[ERRO] Falha de hierarquia ao dar cargo.")
+            except Exception as e:
+                await interaction.response.send_message(f"❌ Ocorreu um erro inesperado: {e}", ephemeral=True)
+                print(f"[ERRO] {e}")
+        else:
+            await interaction.response.send_message(f"❌ Erro crítico: O cargo '{role_name}' não foi encontrado no servidor. Verifique se o nome está escrito corretamente!", ephemeral=True)
+            print(f"[ERRO] Cargo '{role_name}' não existe no servidor.")
 
 class CloseTicketModal(discord.ui.Modal, title="Encerrar Atendimento"):
     motivo = discord.ui.TextInput(label="Motivo do fechamento", style=discord.TextStyle.paragraph, placeholder="Explique o motivo...")
